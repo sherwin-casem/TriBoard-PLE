@@ -1,0 +1,17 @@
+[project]
+name = "esp32s3-distributed-ai"
+version = "0.1.0"
+description = "Distributed AI on 3x ESP32-S3 N16R8 with ESP-NOW"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.1.0",
+    "numpy>=1.24.0",
+    "tokenizers>=0.15.0",
+    "datasets>=2.14.0",
+    "tqdm>=4.65.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.1.0",
+]
