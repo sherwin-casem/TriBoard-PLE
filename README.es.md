@@ -8,7 +8,9 @@
 
 Este proyecto implementa un **sistema de IA distribuida** que ejecuta un **modelo de lenguaje de 56 millones de parámetros** en tres microcontroladores ESP32-S3. Inspirado por [slvDev/esp32-ai](https://github.com/slvDev/esp32-ai), que demostró correr TinyStories en una sola placa, este proyecto extiende la arquitectura a un sistema multi-placa con interacción vía web.
 
-El modelo se entrena en **WikiText-103** (corpus de Wikipedia) usando **Per-Layer Embeddings (PLE)** de la arquitectura Gemma de Google, se cuantiza a 4 bits y se divide entre tres placas que se comunican mediante el protocolo inalámbrico ESP-NOW. La tabla PLE de 50.3M parámetros se divide entre Board A y Board B (**Split-PLE**) para caber en los 16MB de flash por placa.
+El modelo se entrena en **WikiText-103** (corpus de Wikipedia) usando **Per-Layer Embeddings (PLE)** de la arquitectura Gemma de Google, se cuantiza a 4 bits y se divide entre tres placas que se comunican mediante el protocolo inalámbrico ESP-NOW. La tabla PLE de 50.3M parámetros se divide entre Board A y Board B (**Split-PLE**) para caber en los 16MB de flash por placa. Board B mantiene una **KV cache** en PSRAM (1.5 MB para 256 posiciones), permitiendo que el transformer atienda toda la secuencia generada en lugar de operar token por token.
+
+![Tres placas ESP32-S3 N16R8 conectadas a energía](docs/images/boards.jpeg)
 
 ---
 
@@ -234,56 +236,89 @@ ls /dev/cu.usbmodem*
 
 1. Encender las tres boards
 2. Conectar tu celular/PC a la WiFi: **ESP32-DIST-AI** (contraseña: `ai123456`)
+
+   ![WiFi conectada a la red ESP32-DIST-AI](docs/images/net1.jpeg)
+
 3. Abrir `http://192.168.4.1` en el navegador
+
+   ![Detalles de red mostrando IP 192.168.4.1](docs/images/net2.jpeg)
+
 4. Escribir un prompt y hacer clic en "Generate"
+
+   ![Captura de la app con prompt y texto generado](docs/images/inference.jpeg)
 
 ---
 
 ## Lo que está Listo
 
-- [x] Arquitectura PLE TinyLM v2 (56M params, d_model=128, ple_dim=256)
-- [x] Split-PLE: tabla PLE dividida entre Board A + Board B (128+128 por capa)
-- [x] Descarga y tokenización BPE de WikiText-103 (112M tokens)
-- [x] Entrenamiento en WikiText-103 (PPL 192, 12.3M tokens)
-- [x] Segundo entrenamiento: 12,000 steps con batch_size=8 (6x más datos que v1)
-- [x] Prueba de inferencia local confirmó generación de texto coherente (20-30 palabras)
-- [x] Cuantización 4-bit (+0.62 nats de degradación)
-- [x] Exportación dividida a 3 binarios por board
-- [x] Runtime C de inferencia actualizado con soporte Split-PLE
-- [x] Protocolo ESP-NOW con fragmentación
-- [x] Firmware Board A (embeddings + proyección PLE + output head)
-- [x] Firmware Board B (core transformer + PLE_B con gating combinado)
-- [x] Firmware Board C (tabla PLE A + decodificador + servidor web WiFi)
-- [x] Interfaz web para input de texto y output generado
-- [x] Scripts de flasheo y verificación
-- [x] Board A: tok_emb 8-bit, proyección PLE + output head (modelo 4.31 MB)
-- [x] Board B: core transformer + PLE_B (modelo 13.71 MB)
-- [x] Board C: tabla PLE A + decodificador + servidor web (modelo 13.37 MB)
-- [x] Tabla PLE A movida de Board A a Board C (solucionó desbordamiento de partición en A)
-- [x] Protocolo A↔C por token vía ESP-NOW (MSG_PLE_REQUEST / MSG_PLE_RESULT)
-- [x] Board C: tabla PLE A cuantizada 4-bit group=64 (mayor precisión)
-- [x] Board A: tok_emb actualizado de 4-bit a 8-bit (mejor calidad de inferencia)
-- [x] Heurística de espacios en Board C: agrega espacios entre palabras en la salida
-- [x] Comparación local de inferencia confirmó que la cuantización 4-bit es el cuello de botella (no el protocolo)
-- [x] Board A flasheada con firmware + modelo 4.31 MB (MAC: `14:c1:9f:2a:ac:c8`)
-- [x] Board B flasheada con firmware + modelo 13.71 MB (MAC: `14:c1:9f:2c:91:10`)
-- [x] Board C flasheada con firmware + modelo 13.37 MB (MAC: `28:84:85:51:dc:10`)
-- [x] Direcciones MAC identificadas para las 3 boards
-- [x] Compatibilidad con Arduino core 3.3.11 (firma `espnow_send_cb`)
-- [x] Partición factory ampliada a 1.25 MB para todas las boards
-- [x] **KV Cache en Board B**: Atención causal multi-head completa con K/V caching en PSRAM (1.5 MB para 256 posiciones), RoPE usa índices de posición reales
-- [x] **MAX_SEQ_LEN incrementado a 256** y loop de generación a 128, soportando secuencias de 30+ palabras
-- [x] **srand(esp_random())** agregado para sampling no-determinista
+<details>
+<summary>Arquitectura — PLE TinyLM v2, Split-PLE, 56M params</summary>
+
+- PLE TinyLM v2 con d_model=128, n_layers=6, ple_dim=256
+- Split-PLE: tabla PLE dividida entre Board A y Board C (128+128 por capa)
+- Tabla PLE A movida de Board A a Board C (solucionó desbordamiento de partición)
+- Petición/respuesta A↔C por token vía ESP-NOW
+- KV cache en Board B: atención causal multi-head con K/V caching en PSRAM (1.5 MB para 256 posiciones), RoPE usa índices reales
+- MAX_SEQ_LEN=256, loop de generación=128, soporta 30+ palabras
+- srand(esp_random()) para sampling no-determinista
+</details>
+
+<details>
+<summary>Entrenamiento — WikiText-103, PPL 192, 12K steps, 12.3M tokens</summary>
+
+- Descarga y tokenización BPE de WikiText-103 (112M tokens)
+- Entrenamiento: 12,000 steps, batch_size=8, seq_len=128, 12.3M tokens
+- Loss fp32 final: 5.26, Perplejidad: 192
+- Tiempo de entrenamiento: ~6.9 horas (Mac i7 CPU)
+</details>
+
+<details>
+<summary>Cuantización y Exportación — 4-bit, 31.39 MB total</summary>
+
+- Cuantización 4-bit group-wise (+0.62 nats de degradación, PPL 4-bit 358)
+- tok_emb: 8-bit group=128, tabla PLE A: 4-bit group=64, resto: 4-bit group=128
+- Exportación a 3 binarios: A: 4.31 MB, B: 13.71 MB, C: 13.37 MB
+- Logits golden de referencia para verificación
+</details>
+
+<details>
+<summary>Firmware — 3 boards, ESP-NOW, Web UI, loop autorregresivo</summary>
+
+- Board A: tokenizer + tok_emb 8-bit + proyección PLE + output head
+- Board B: 6 capas transformer + PLE_B + PLE gating + KV cache
+- Board C: tabla PLE A (4-bit group=64) + decodificador + WiFi AP + Web UI
+- Protocolo ESP-NOW con fragmentación, números de secuencia y acuses de recibo
+- Web UI para input de texto, output streaming y endpoint SSE
+- Loop autorregresivo (hasta 128 tokens) entre las 3 boards
+- Heurística de espacios en Board C
+- Compatibilidad Arduino core 3.3.11, partición factory 1.25 MB
+</details>
+
+<details>
+<summary>Flash y Deploy — 3 boards flasheadas con firmware + modelo</summary>
+
+- Board A: MAC `14:c1:9f:2a:ac:c8` / puerto `5C372059631`
+- Board B: MAC `14:c1:9f:2c:91:10` / puerto `5C372065471`
+- Board C: MAC `28:84:85:51:dc:10` / puerto `5C4D0363671`
+- Scripts de flasheo y verificación
+</details>
+
+<details>
+<summary>Testing — Inferencia local confirma texto coherente (~30 palabras)</summary>
+
+- Prueba de inferencia local confirmó ~30 palabras coherentes
+- Confirmado que la cuantización 4-bit es el cuello de botella (no el protocolo)
+- Comparación entre fp32, cuantizado e inferencia en dispositivo
+</details>
 
 ## Lo que Falta
 
-- [ ] **Tokenizador BPE en C**: El tokenizador actual en Board A es búsqueda bruta en vocabulario; necesita implementación BPE con merges
-- [ ] **Configuración MAC ESP-NOW**: Las MACs se conocen pero siguen en broadcast en `espnow_protocol.h`
-- [x] **Loop autorregresivo completo**: Board A orquesta la generación token por token (hasta 128 tokens generados) con KV cache, intercambio PLE, sampling y streaming entre las 3 boards
-- [ ] **Mejoras en Web UI**: Agregar display de tokens streaming, parámetros de generación (temperature, top-k) e indicadores de estado
-- [ ] **Manejo de errores**: Retransmisión ESP-NOW y timeouts en caso de pérdida de paquetes
-- [ ] **Optimización de energía**: Deep sleep entre peticiones de inferencia
-- [ ] **Salida de audio**: Integración de altavoz I2S (futuro)
+- [ ] **Tokenizador BPE en C** — Reemplazar búsqueda bruta en vocabulario por BPE con merges
+- [ ] **MACs ESP-NOW estáticas** — Configurar MACs conocidas en vez de broadcast
+- [ ] **Mejoras Web UI** — Display streaming de tokens, temperatura/top-k, indicadores de estado
+- [ ] **Manejo de errores** — Retransmisión ESP-NOW y timeouts por pérdida de paquetes
+- [ ] **Optimización de energía** — Deep sleep entre requests de inferencia
+- [ ] **Salida de audio** — Altavoz I2S (futuro)
 
 ---
 

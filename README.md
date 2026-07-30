@@ -8,7 +8,9 @@
 
 This project implements a **distributed AI system** that runs a **56M-parameter language model** across three ESP32-S3 microcontrollers. Inspired by [slvDev/esp32-ai](https://github.com/slvDev/esp32-ai), which demonstrated running TinyStories on a single board, this project extends the architecture to a multi-board distributed system with web-based interaction.
 
-The model is trained on **WikiText-103** (Wikipedia corpus) using **Per-Layer Embeddings (PLE)** from Google's Gemma architecture, quantized to 4-bit, and split across three boards that communicate via ESP-NOW wireless protocol. The 50.3M-parameter PLE table is split across Board A and Board B (**Split-PLE**) to fit within the 16MB flash per board.
+The model is trained on **WikiText-103** (Wikipedia corpus) using **Per-Layer Embeddings (PLE)** from Google's Gemma architecture, quantized to 4-bit, and split across three boards that communicate via ESP-NOW wireless protocol. The 50.3M-parameter PLE table is split across Board A and Board B (**Split-PLE**) to fit within the 16MB flash per board. Board B maintains a **KV cache** in PSRAM (1.5 MB for 256 positions), enabling the transformer to attend to the full generated sequence instead of operating token-by-token.
+
+![Three ESP32-S3 N16R8 boards connected to power](docs/images/boards.jpeg)
 
 ---
 
@@ -229,56 +231,89 @@ python src/gen_assets.py
 
 1. Power on all three boards
 2. Connect your phone/laptop to WiFi: **ESP32-DIST-AI** (password: `ai123456`)
+
+   ![WiFi connected to ESP32-DIST-AI SSID](docs/images/net1.jpeg)
+
 3. Open `http://192.168.4.1` in your browser
+
+   ![Network details showing IP 192.168.4.1](docs/images/net2.jpeg)
+
 4. Type a prompt and click "Generate"
+
+   ![App screenshot with prompt and generated text](docs/images/inference.jpeg)
 
 ---
 
 ## What's Done
 
-- [x] PLE TinyLM architecture v2 (56M params, d_model=128, ple_dim=256)
-- [x] Split-PLE: PLE table divided across Board A + Board B (128+128 per layer)
-- [x] WikiText-103 dataset download and BPE tokenization (112M tokens)
-- [x] Model training on WikiText-103 (PPL 192, 12.3M tokens)
-- [x] Second training run: 12,000 steps with batch_size=8 (6x more data than v1)
-- [x] Local inference test confirmed coherent English output (20-30 words)
-- [x] 4-bit quantization (+0.62 nats degradation from fp32)
-- [x] Split export to 3 board binaries
-- [x] Updated C inference runtime (llm.h) with split-PLE support
-- [x] ESP-NOW protocol with fragmentation
-- [x] Board A firmware (embeddings + PLE projection + output head)
-- [x] Board B firmware (transformer core + PLE_B with combined gating)
-- [x] Board C firmware (PLE table A + decoder + WiFi web server)
-- [x] Web UI for prompt input and text output
-- [x] Flash and verification scripts
-- [x] Board A firmware: 8-bit tok_emb, PLE projection + output head (4.31 MB model)
-- [x] Board B firmware: transformer core + PLE_B (13.71 MB model)
-- [x] Board C firmware: PLE table A + decoder + WiFi web server (13.37 MB model)
-- [x] PLE table A moved from Board A to Board C (fixed partition overflow on A)
-- [x] Per-token A↔C PLE request/response via ESP-NOW (MSG_PLE_REQUEST / MSG_PLE_RESULT)
-- [x] Board C: PLE table A quantized at 4-bit group=64 (higher precision)
-- [x] Board A: tok_emb upgraded from 4-bit to 8-bit (better inference quality)
-- [x] Space-insertion heuristic on Board C: adds spaces between words in output
-- [x] Local inference comparison confirmed 4-bit quantization as quality bottleneck (not protocol bug)
-- [x] Board A flashed with firmware + 4.31 MB model (MAC: `14:c1:9f:2a:ac:c8`)
-- [x] Board B flashed with firmware + 13.71 MB model (MAC: `14:c1:9f:2c:91:10`)
-- [x] Board C flashed with firmware + 13.37 MB model (MAC: `28:84:85:51:dc:10`)
-- [x] ESP-NOW MAC addresses identified for all 3 boards
-- [x] Arduino core 3.3.11 compatibility fixes (`espnow_send_cb` signature)
-- [x] Partition table enlarged to 1.25 MB factory partition for all boards
-- [x] **KV cache on Board B**: Full multi-head causal attention with K/V caching in PSRAM (1.5 MB for 256 positions), RoPE uses actual position indices
-- [x] **MAX_SEQ_LEN increased to 256** and gen loop to 128, supporting 30+ word sequences
-- [x] **srand(esp_random())** added for non-deterministic sampling
+<details>
+<summary>Architecture — PLE TinyLM v2, Split-PLE, 56M params</summary>
+
+- PLE TinyLM v2 with d_model=128, n_layers=6, ple_dim=256
+- Split-PLE: PLE table divided across Board A + Board C (128+128 per layer)
+- PLE table A moved from Board A to Board C (fixed partition overflow on A)
+- Per-token A↔C PLE request/response via ESP-NOW
+- KV cache on Board B: full multi-head causal attention with K/V caching in PSRAM (1.5 MB for 256 positions), RoPE uses actual position indices
+- MAX_SEQ_LEN=256, gen loop=128, supporting 30+ word sequences
+- srand(esp_random()) for non-deterministic sampling
+</details>
+
+<details>
+<summary>Training — WikiText-103, PPL 192, 12K steps, 12.3M tokens</summary>
+
+- WikiText-103 dataset download and BPE tokenization (112M tokens)
+- Model training: 12,000 steps, batch_size=8, seg_len=128, 12.3M tokens
+- Final fp32 loss: 5.26, Perplexity: 192
+- Training time: ~6.9 hours (Mac i7 CPU)
+</details>
+
+<details>
+<summary>Quantization & Export — 4-bit, 31.39 MB total</summary>
+
+- 4-bit group-wise quantization (+0.62 nats degradation from fp32, 4-bit PPL 358)
+- tok_emb: 8-bit group=128, PLE table A: 4-bit group=64, rest: 4-bit group=128
+- Export to 3 board binaries: A: 4.31 MB, B: 13.71 MB, C: 13.37 MB
+- Reference golden logits for verification
+</details>
+
+<details>
+<summary>Firmware — 3 boards, ESP-NOW, Web UI, autoregressive loop</summary>
+
+- Board A: tokenizer + 8-bit tok_emb + PLE projection + output head
+- Board B: 6 transformer layers + PLE_B + PLE gating + KV cache
+- Board C: PLE table A (4-bit group=64) + decoder + WiFi AP + Web UI
+- ESP-NOW protocol with fragmentation, sequence numbers, and acks
+- Web UI for prompt input, streaming output, and SSE endpoint
+- Autoregressive generation loop (up to 128 tokens) across all 3 boards
+- Space-insertion heuristic on Board C
+- Arduino core 3.3.11 compatibility, partition table 1.25 MB
+</details>
+
+<details>
+<summary>Flash & Deploy — 3 boards flashed with firmware + model</summary>
+
+- Board A: MAC `14:c1:9f:2a:ac:c8` / port `5C372059631`
+- Board B: MAC `14:c1:9f:2c:91:10` / port `5C372065471`
+- Board C: MAC `28:84:85:51:dc:10` / port `5C4D0363671`
+- Flash and verification scripts
+</details>
+
+<details>
+<summary>Testing — Local inference confirmed coherent output (~30 words)</summary>
+
+- Local inference test confirmed ~30 coherent words
+- Confirmed 4-bit quantization is the quality bottleneck (not protocol)
+- Comparison between full fp32, quantized, and on-device inference
+</details>
 
 ## What's Pending
 
-- [ ] **Proper BPE tokenizer in C**: Current Board A tokenizer uses brute-force vocab search; needs proper BPE merge implementation
-- [ ] **ESP-NOW MAC configuration**: MACs are known but still set to broadcast in `espnow_protocol.h`
-- [x] **Autoregressive generation loop**: Board A orchestrates full token-by-token generation (up to 128 generated tokens) with KV cache, PLE exchange, sampling, and streaming output across all 3 boards
-- [ ] **Web UI improvements**: Add streaming token display, generation parameters (temperature, top-k), and status indicators
-- [ ] **Error handling**: ESP-NOW retransmission and timeout handling on packet loss
-- [ ] **Power optimization**: Deep sleep between inference requests
-- [ ] **Audio output**: I2S speaker integration (future)
+- [ ] **BPE tokenizer in C** — Replace brute-force vocab search with proper BPE merge implementation
+- [ ] **Static ESP-NOW MACs** — Configure known MACs instead of broadcast
+- [ ] **Web UI improvements** — Streaming token display, temperature/top-k controls, status indicators
+- [ ] **Error handling** — ESP-NOW retransmission and timeout on packet loss
+- [ ] **Power optimization** — Deep sleep between inference requests
+- [ ] **Audio output** — I2S speaker integration (future)
 
 ---
 
