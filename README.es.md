@@ -1,4 +1,4 @@
-# ESP32-S3 IA Distribuida
+# TriBoard PLE
 
 **Inferencia distribuida de micro-LLM en tres placas ESP32-S3 N16R8 con comunicación ESP-NOW.**
 
@@ -235,9 +235,9 @@ ls /dev/cu.usbmodem*
 ### 5. Usar
 
 1. Encender las tres boards
-2. Conectar tu celular/PC a la WiFi: **ESP32-DIST-AI** (contraseña: `ai123456`)
+2. Conectar tu celular/PC a la WiFi: **TRIBOARD-PLE** (contraseña: `ai123456`)
 
-   ![WiFi conectada a la red ESP32-DIST-AI](docs/images/net1.jpeg)
+   ![WiFi conectada a la red TRIBOARD-PLE](docs/images/net1.jpeg)
 
 3. Abrir `http://192.168.4.1` en el navegador
 

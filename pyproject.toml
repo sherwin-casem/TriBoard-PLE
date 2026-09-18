@@ -1,7 +1,7 @@
 [project]
-name = "esp32s3-distributed-ai"
+name = "triboard-ple"
 version = "0.1.0"
-description = "Distributed AI on 3x ESP32-S3 N16R8 with ESP-NOW"
+description = "TriBoard PLE: distributed micro-LLM inference on 3x ESP32-S3 N16R8 boards with ESP-NOW"
 requires-python = ">=3.11"
 dependencies = [
     "torch>=2.1.0",
