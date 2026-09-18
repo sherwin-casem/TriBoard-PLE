@@ -1,4 +1,4 @@
-# ESP32-S3 Distributed AI
+# TriBoard PLE
 
 **Distributed micro-LLM inference across three ESP32-S3 N16R8 boards with ESP-NOW communication.**
 
@@ -230,9 +230,9 @@ python src/gen_assets.py
 ### 5. Use
 
 1. Power on all three boards
-2. Connect your phone/laptop to WiFi: **ESP32-DIST-AI** (password: `ai123456`)
+2. Connect your phone/laptop to WiFi: **TRIBOARD-PLE** (password: `ai123456`)
 
-   ![WiFi connected to ESP32-DIST-AI SSID](docs/images/net1.jpeg)
+   ![WiFi connected to TRIBOARD-PLE SSID](docs/images/net1.jpeg)
 
 3. Open `http://192.168.4.1` in your browser
 

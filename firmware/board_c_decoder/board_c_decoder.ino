@@ -117,7 +117,7 @@ static httpd_handle_t server = NULL;
 static esp_err_t index_handler(httpd_req_t *req) {
   const char *html = "<!DOCTYPE html><html><head>"
     "<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>ESP32 Distributed AI - 56M</title>"
+    "<title>TriBoard PLE - 56M</title>"
     "<style>"
     "body{font-family:monospace;background:#111;color:#0f0;margin:20px;}"
     "h1{color:#0ff;}textarea{width:100%;height:80px;background:#222;color:#0f0;"
@@ -129,7 +129,7 @@ static esp_err_t index_handler(httpd_req_t *req) {
     "white-space:pre-wrap;font-size:14px;margin-top:10px;}"
     ".status{color:#ff0;margin:5px 0;}"
     ".info{color:#888;font-size:12px;}</style></head><body>"
-    "<h1>ESP32 Distributed AI</h1>"
+    "<h1>TriBoard PLE</h1>"
     "<p class='status'>3x ESP32-S3 | 56M PLE TinyLM | WikiText-103</p>"
     "<p class='info'>Board protocol: Split-PLE (128+128 per layer)</p>"
     "<textarea id='prompt' placeholder='Type your prompt here...'>The history of</textarea><br>"
@@ -249,7 +249,7 @@ void setup() {
   Serial.println("\n=== Board C: Decoder ===");
 
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP("ESP32-DIST-AI", "ai123456", 1, 0, 4);
+  WiFi.softAP("TRIBOARD-PLE", "ai123456", 1, 0, 4);
   Serial.println("softAP started");
   esp_err_t en_ret = esp_now_init();
   Serial.printf("esp_now_init: %d\n", en_ret);
